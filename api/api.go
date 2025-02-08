@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/GetStream/stream-backend-homework-assignment/api/validator"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -28,7 +30,7 @@ type API struct {
 	Logger *slog.Logger
 	DB     DB
 	Cache  Cache
-	Val    *Validator
+	Val    *validator.Validator
 
 	once sync.Once
 	mux  *http.ServeMux
@@ -72,7 +74,7 @@ func (a *API) respondError(w http.ResponseWriter, status int, err error, msg str
 func (a *API) validateBody(w http.ResponseWriter, s interface{}) bool {
 	errs := a.Val.ValidateStruct(s)
 	type response struct {
-		Errors []ValidationError `json:"errors"`
+		Errors []validator.ValidationError `json:"errors"`
 	}
 
 	if len(errs) > 0 {
@@ -89,7 +91,16 @@ func (a *API) listMessages(w http.ResponseWriter, r *http.Request) {
 		Messages []Message `json:"messages"`
 	}
 
-	page := 1
+	pageStr := r.URL.Query().Get("page")
+	if pageStr == "" {
+		pageStr = "1"
+	}
+
+	page, err := strconv.Atoi(pageStr)
+	if err != nil {
+		a.respondError(w, http.StatusBadRequest, err, "Invalid page number")
+		return
+	}
 
 	// Get messages from cache
 	msgs, err := a.Cache.ListMessages(r.Context())
@@ -182,14 +193,6 @@ func (a *API) createReaction(w http.ResponseWriter, r *http.Request) {
 			Score  int    `json:"score"`
 			UserID string `json:"user_id"`
 		}
-		response struct {
-			ID        string `json:"id"`         // reaction ID
-			MessageID string `json:"message_id"` // message ID
-			Type      string `json:"type"`       // reaction type, for example 'like', 'laugh', 'wow', 'thumbs_up'
-			Score     int    `json:"score"`      // reaction score should default to 1 if not specified, but can be any positive integer. Think of claps on Medium.com
-			UserID    string `json:"user_id"`    // the user ID submitting the reaction
-			CreatedAt string `json:"created_at"` // the date/time the reaction was created
-		}
 	)
 
 	messageID := r.PathValue("messageID")
@@ -206,6 +209,10 @@ func (a *API) createReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if valid := a.validateBody(w, &body); !valid {
+		return
+	}
+
 	reaction, err := a.DB.InsertReaction(r.Context(), Reaction{
 		MessageID: messageID,
 		Type:      body.Type,
@@ -219,12 +226,12 @@ func (a *API) createReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.respond(w, http.StatusCreated, response{
+	a.respond(w, http.StatusCreated, Reaction{
 		ID:        reaction.ID,
 		MessageID: reaction.MessageID,
 		Type:      reaction.Type,
 		Score:     reaction.Score,
 		UserID:    reaction.UserID,
-		CreatedAt: reaction.CreatedAt.Format(time.RFC1123),
+		CreatedAt: reaction.CreatedAt,
 	})
 }

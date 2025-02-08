@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/GetStream/stream-backend-homework-assignment/api/validator"
 	"log/slog"
 	"net"
 	"net/http"
@@ -53,7 +54,7 @@ func main() {
 		Logger: logger,
 		DB:     pg,
 		Cache:  redis,
-		Val:    api.New(),
+		Val:    validator.New(),
 	}
 
 	srv := &http.Server{

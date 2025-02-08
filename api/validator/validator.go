@@ -1,4 +1,4 @@
-package api
+package validator
 
 import (
 	"fmt"
@@ -20,8 +20,8 @@ type ValidationError struct {
 // ValidateStruct validates the provided struct using the underlying validator and returns a slice of validation errors.
 func (v *Validator) ValidateStruct(s interface{}) []ValidationError {
 	errors := make([]ValidationError, 0)
-	err := v.cli.Struct(s)
 
+	err := v.cli.Struct(s)
 	if err != nil {
 		for _, err := range err.(validator.ValidationErrors) {
 			var msg string
