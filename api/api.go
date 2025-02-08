@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/GetStream/stream-backend-homework-assignment/api/validator"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -29,7 +28,7 @@ type API struct {
 	Logger *slog.Logger
 	DB     DB
 	Cache  Cache
-	Val    *validator.Validator
+	Val    *Validator
 
 	once sync.Once
 	mux  *http.ServeMux
@@ -73,7 +72,7 @@ func (a *API) respondError(w http.ResponseWriter, status int, err error, msg str
 func (a *API) validateBody(w http.ResponseWriter, s interface{}) bool {
 	errs := a.Val.ValidateStruct(s)
 	type response struct {
-		Errors []validator.ValidationError `json:"errors"`
+		Errors []ValidationError `json:"errors"`
 	}
 
 	if len(errs) > 0 {
