@@ -60,7 +60,12 @@ func (r *Redis) ListMessages(ctx context.Context) ([]api.Message, error) {
 
 // InsertMessage adds the message to Redis with the message:MESSAGE_ID as the key and adds the key to a sorted set.
 func (r *Redis) InsertMessage(ctx context.Context, msg api.Message) error {
-	m := message(msg)
+	m := &message{
+		ID:        msg.ID,
+		Text:      msg.Text,
+		UserID:    msg.UserID,
+		CreatedAt: msg.CreatedAt,
+	}
 
 	err := r.cli.Watch(ctx, func(tx *redis.Tx) error {
 		_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/GetStream/stream-backend-homework-assignment/api/validator"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -12,8 +13,9 @@ import (
 
 // A DB provides a storage layer that persists messages.
 type DB interface {
-	ListMessages(ctx context.Context, excludeMsgIDs ...string) ([]Message, error)
+	ListMessages(ctx context.Context, limit int, offset int, excludeMsgIDs ...string) ([]Message, error)
 	InsertMessage(ctx context.Context, msg Message) (Message, error)
+	InsertReaction(ctx context.Context, reaction Reaction) (Reaction, error)
 }
 
 // A Cache provides a storage layer that caches messages.
@@ -27,10 +29,14 @@ type API struct {
 	Logger *slog.Logger
 	DB     DB
 	Cache  Cache
+	Val    *validator.Validator
 
 	once sync.Once
 	mux  *http.ServeMux
 }
+
+// pageSize defines the default number of items displayed on a single page in pagination.
+var pageSize = 10
 
 func (a *API) setupRoutes() {
 	mux := http.NewServeMux()
@@ -64,16 +70,27 @@ func (a *API) respondError(w http.ResponseWriter, status int, err error, msg str
 	a.respond(w, status, response{Error: msg})
 }
 
-func (a *API) listMessages(w http.ResponseWriter, r *http.Request) {
-	type message struct {
-		ID        string `json:"id"`
-		Text      string `json:"text"`
-		UserID    string `json:"user_id"`
-		CreatedAt string `json:"created_at"`
-	}
+func (a *API) validateBody(w http.ResponseWriter, s interface{}) bool {
+	errs := a.Val.ValidateStruct(s)
 	type response struct {
-		Messages []message `json:"messages"`
+		Errors []validator.ValidationError `json:"errors"`
 	}
+
+	if len(errs) > 0 {
+		a.respond(w, http.StatusBadRequest, &response{
+			Errors: errs,
+		})
+		return false
+	}
+	return true
+}
+
+func (a *API) listMessages(w http.ResponseWriter, r *http.Request) {
+	type response struct {
+		Messages []Message `json:"messages"`
+	}
+
+	page := 1
 
 	// Get messages from cache
 	msgs, err := a.Cache.ListMessages(r.Context())
@@ -81,7 +98,6 @@ func (a *API) listMessages(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, http.StatusInternalServerError, err, "Could not list messages")
 		return
 	}
-
 	a.Logger.Info("Got messages from cache", "count", len(msgs))
 
 	// Get any remaining messages from DB
@@ -89,34 +105,27 @@ func (a *API) listMessages(w http.ResponseWriter, r *http.Request) {
 	for i, msg := range msgs {
 		msgIDs[i] = msg.ID
 	}
-	dbMsgs, err := a.DB.ListMessages(r.Context(), msgIDs...)
+
+	dbMsgs, err := a.DB.ListMessages(r.Context(), pageSize, pageSize*(page-1), msgIDs...)
 	if err != nil {
 		a.respondError(w, http.StatusInternalServerError, err, "Could not list messages")
 		return
 	}
+
 	a.Logger.Info("Got remaining messages from DB", "count", len(dbMsgs))
 	msgs = append(msgs, dbMsgs...)
-
-	out := make([]message, len(msgs))
-	for i, msg := range msgs {
-		out[i] = message{
-			ID:        msg.ID,
-			Text:      msg.Text,
-			UserID:    msg.UserID,
-			CreatedAt: msg.CreatedAt.Format(time.RFC1123),
-		}
-	}
 	res := response{
-		Messages: out,
+		Messages: msgs,
 	}
+
 	a.respond(w, http.StatusOK, res)
 }
 
 func (a *API) createMessage(w http.ResponseWriter, r *http.Request) {
 	type (
 		request struct {
-			Text   string `json:"text"`
-			UserID string `json:"user_id"`
+			Text   string `json:"text" validate:"required"`
+			UserID string `json:"user_id" validate:"required"`
 		}
 		response struct {
 			ID        string `json:"id"`
@@ -132,7 +141,16 @@ func (a *API) createMessage(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, http.StatusBadRequest, err, "Could not decode request body")
 		return
 	}
-	r.Body.Close()
+
+	if valid := a.validateBody(w, &body); !valid {
+		return
+	}
+
+	err = r.Body.Close()
+	if err != nil {
+		a.respondError(w, http.StatusInternalServerError, err, "Could not close request body")
+		return
+	}
 
 	msg, err := a.DB.InsertMessage(r.Context(), Message{
 		Text:      body.Text,
@@ -154,6 +172,7 @@ func (a *API) createMessage(w http.ResponseWriter, r *http.Request) {
 		UserID:    msg.UserID,
 		CreatedAt: msg.CreatedAt.Format(time.RFC1123),
 	}
+
 	a.respond(w, http.StatusCreated, res)
 }
 
@@ -181,8 +200,32 @@ func (a *API) createReaction(w http.ResponseWriter, r *http.Request) {
 		a.respondError(w, http.StatusBadRequest, err, "Could not decode request body")
 		return
 	}
-	r.Body.Close()
 
-	err = fmt.Errorf("could not create reaction for message with id %s", messageID)
-	a.respondError(w, http.StatusNotImplemented, err, err.Error())
+	err = r.Body.Close()
+	if err != nil {
+		a.respondError(w, http.StatusInternalServerError, err, "Invalid request body")
+		return
+	}
+
+	reaction, err := a.DB.InsertReaction(r.Context(), Reaction{
+		MessageID: messageID,
+		Type:      body.Type,
+		Score:     body.Score,
+		UserID:    body.UserID,
+		CreatedAt: time.Now(),
+	})
+
+	if err != nil {
+		a.respondError(w, http.StatusInternalServerError, err, fmt.Sprintf("could not create reaction for message with id %s", messageID))
+		return
+	}
+
+	a.respond(w, http.StatusCreated, response{
+		ID:        reaction.ID,
+		MessageID: reaction.MessageID,
+		Type:      reaction.Type,
+		Score:     reaction.Score,
+		UserID:    reaction.UserID,
+		CreatedAt: reaction.CreatedAt.Format(time.RFC1123),
+	})
 }

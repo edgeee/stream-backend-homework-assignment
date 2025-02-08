@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/GetStream/stream-backend-homework-assignment/api/validator"
 	"log/slog"
 	"net"
 	"net/http"
@@ -53,6 +54,7 @@ func main() {
 		Logger: logger,
 		DB:     pg,
 		Cache:  redis,
+		Val:    validator.New(),
 	}
 
 	srv := &http.Server{
@@ -63,7 +65,11 @@ func main() {
 		<-ctx.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		srv.Shutdown(ctx)
+
+		err := srv.Shutdown(ctx)
+		if err != nil {
+			return
+		}
 	}()
 
 	logger.Info("Ready to accept traffic", "address", *addr)

@@ -30,15 +30,19 @@ func Connect(ctx context.Context, connStr string) (*Postgres, error) {
 }
 
 // ListMessages returns all messages in the database.
-func (pg *Postgres) ListMessages(ctx context.Context, excludeMsgIDs ...string) ([]api.Message, error) {
+func (pg *Postgres) ListMessages(ctx context.Context, limit int, offset int, excludeMsgIDs ...string) ([]api.Message, error) {
 	var msgs []message
 	q := pg.bun.NewSelect().
 		Model(&msgs).
-		Order("created_at DESC")
+		Relation("Reactions").
+		Order("created_at DESC").
+		Limit(limit).
+		Offset(offset)
 
 	if len(excludeMsgIDs) > 0 {
 		q = q.Where("id NOT IN (?)", bun.In(excludeMsgIDs))
 	}
+
 	if err := q.Scan(ctx); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
@@ -46,6 +50,7 @@ func (pg *Postgres) ListMessages(ctx context.Context, excludeMsgIDs ...string) (
 	for i, m := range msgs {
 		out[i] = m.APIMessage()
 	}
+
 	return out, nil
 }
 
@@ -62,6 +67,16 @@ func (pg *Postgres) InsertMessage(ctx context.Context, msg api.Message) (api.Mes
 	return m.APIMessage(), nil
 }
 
-func (pg *Postgres) InsertReaction(ctx context.Context, reaction api.Reaction) (api.Reaction, error) {
-	panic("not implemented")
+// InsertReaction inserts a message reaction into the database.
+func (pg *Postgres) InsertReaction(ctx context.Context, r api.Reaction) (api.Reaction, error) {
+	rm := &reaction{
+		MessageID: r.MessageID,
+		UserID:    r.UserID,
+		Type:      r.Type,
+		Score:     r.Score,
+	}
+	if _, err := pg.bun.NewInsert().Model(rm).Exec(ctx); err != nil {
+		return api.Reaction{}, fmt.Errorf("insert: %w", err)
+	}
+	return rm.APIReaction(), nil
 }
