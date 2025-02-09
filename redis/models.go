@@ -25,17 +25,18 @@ type reaction struct {
 }
 
 func (m message) APIMessage() api.Message {
+	reactions := make([]api.Reaction, len(m.Reactions))
+	for i, r := range m.Reactions {
+		reactions[i] = r.APIReaction()
+	}
+
 	apiMsg := api.Message{
 		ID:            m.ID,
 		Text:          m.Text,
 		UserID:        m.UserID,
 		CreatedAt:     m.CreatedAt,
-		Reactions:     make([]api.Reaction, len(m.Reactions)),
+		Reactions:     reactions,
 		ReactionCount: len(m.Reactions),
-	}
-
-	for i, r := range m.Reactions {
-		apiMsg.Reactions[i] = r.APIReaction()
 	}
 
 	return apiMsg

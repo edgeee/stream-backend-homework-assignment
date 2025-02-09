@@ -42,7 +42,7 @@ type API struct {
 	mux  *http.ServeMux
 }
 
-// pageSize defines the default number of items displayed on a single page in pagination.
+// pageSize defines the number of items displayed on a single page in pagination.
 var pageSize = 10
 
 func (a *API) setupRoutes() {
