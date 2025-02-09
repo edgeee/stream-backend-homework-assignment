@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/GetStream/stream-backend-homework-assignment/api/validator"
 	"io"
 	"log/slog"
 	"net/http"
@@ -32,7 +33,7 @@ func TestAPI_listMessages(t *testing.T) {
 				},
 			},
 			db: &testdb{
-				listMessages: func(t *testing.T, excludeMsgIDs ...string) ([]Message, error) {
+				listMessages: func(t *testing.T, offset, limit int, excludeMsgIDs ...string) ([]Message, error) {
 					return nil, errors.New("something went wrong")
 				},
 			},
@@ -49,7 +50,7 @@ func TestAPI_listMessages(t *testing.T) {
 				},
 			},
 			db: &testdb{
-				listMessages: func(t *testing.T, excludeMsgIDs ...string) ([]Message, error) {
+				listMessages: func(t *testing.T, offset, limit int, excludeMsgIDs ...string) ([]Message, error) {
 					return nil, nil
 				},
 			},
@@ -66,7 +67,7 @@ func TestAPI_listMessages(t *testing.T) {
 				},
 			},
 			db: &testdb{
-				listMessages: func(t *testing.T, excludeMsgIDs ...string) ([]Message, error) {
+				listMessages: func(t *testing.T, limit, offset int, excludeMsgIDs ...string) ([]Message, error) {
 					return nil, nil
 				},
 			},
@@ -85,12 +86,23 @@ func TestAPI_listMessages(t *testing.T) {
 							Text:      "Hello",
 							UserID:    "testuser",
 							CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+							Reactions: []Reaction{
+								{
+									ID:        "1",
+									MessageID: "1",
+									Score:     1,
+									Type:      "thumbs_up",
+									UserID:    "testuser2",
+									CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+								},
+							},
+							ReactionCount: 1,
 						},
 					}, nil
 				},
 			},
 			db: &testdb{
-				listMessages: func(t *testing.T, excludeMsgIDs ...string) ([]Message, error) {
+				listMessages: func(t *testing.T, offset, limit int, excludeMsgIDs ...string) ([]Message, error) {
 					// Nothing in DB.
 					return nil, nil
 				},
@@ -102,7 +114,18 @@ func TestAPI_listMessages(t *testing.T) {
 						"id": "1",
 						"text": "Hello",
 						"user_id": "testuser",
-						"created_at": "Mon, 01 Jan 2024 00:00:00 UTC"
+						"created_at": "2024-01-01T00:00:00Z",
+						"reactions": [
+							{
+								"id": "1",
+								"message_id": "1",
+								"type": "thumbs_up",
+								"score": 1,
+                                "user_id": "testuser2",
+ 								"created_at": "2024-01-01T00:00:00Z"
+							}
+						],
+						"reaction_count": 1
 					}
 				]
 			}`,
@@ -116,13 +139,24 @@ func TestAPI_listMessages(t *testing.T) {
 				},
 			},
 			db: &testdb{
-				listMessages: func(t *testing.T, excludeMsgIDs ...string) ([]Message, error) {
+				listMessages: func(t *testing.T, offset, limit int, excludeMsgIDs ...string) ([]Message, error) {
 					return []Message{
 						{
 							ID:        "1",
 							Text:      "Hello",
 							UserID:    "testuser",
 							CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+							Reactions: []Reaction{
+								{
+									ID:        "1",
+									MessageID: "1",
+									Score:     1,
+									Type:      "thumbs_up",
+									UserID:    "testuser2",
+									CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+								},
+							},
+							ReactionCount: 1,
 						},
 					}, nil
 				},
@@ -134,7 +168,18 @@ func TestAPI_listMessages(t *testing.T) {
 						"id": "1",
 						"text": "Hello",
 						"user_id": "testuser",
-						"created_at": "Mon, 01 Jan 2024 00:00:00 UTC"
+						"created_at": "2024-01-01T00:00:00Z",
+						"reactions": [
+							{
+								"id": "1",
+								"message_id": "1",
+								"type": "thumbs_up",
+								"score": 1,
+                                "user_id": "testuser2",
+ 								"created_at": "2024-01-01T00:00:00Z"
+							}
+						],
+						"reaction_count": 1
 					}
 				]
 			}`,
@@ -145,22 +190,26 @@ func TestAPI_listMessages(t *testing.T) {
 				listMessages: func(t *testing.T) ([]Message, error) {
 					return []Message{
 						{
-							ID:        "1",
-							Text:      "Hello",
-							UserID:    "testuser",
-							CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+							ID:            "1",
+							Text:          "Hello",
+							UserID:        "testuser",
+							CreatedAt:     time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+							Reactions:     []Reaction{},
+							ReactionCount: 0,
 						},
 					}, nil
 				},
 			},
 			db: &testdb{
-				listMessages: func(t *testing.T, excludeMsgIDs ...string) ([]Message, error) {
+				listMessages: func(t *testing.T, offset, limit int, excludeMsgIDs ...string) ([]Message, error) {
 					return []Message{
 						{
-							ID:        "2",
-							Text:      "World",
-							UserID:    "testuser",
-							CreatedAt: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+							ID:            "2",
+							Text:          "World",
+							UserID:        "testuser",
+							CreatedAt:     time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+							Reactions:     []Reaction{},
+							ReactionCount: 0,
 						},
 					}, nil
 				},
@@ -168,20 +217,24 @@ func TestAPI_listMessages(t *testing.T) {
 			wantStatus: 200,
 			wantBody: `{
 				"messages": [
-					{
-						"id": "1",
-						"text": "Hello",
-						"user_id": "testuser",
-						"created_at": "Mon, 01 Jan 2024 00:00:00 UTC"
-					},
-					{
-						"id": "2",
-						"text": "World",
-						"user_id": "testuser",
-						"created_at": "Tue, 02 Jan 2024 00:00:00 UTC"
-					}
+				  {
+					"id": "1",
+					"text": "Hello",
+					"user_id": "testuser",
+					"created_at": "2024-01-01T00:00:00Z",
+					"reactions": [],
+					"reaction_count": 0
+				  },
+				  {
+					"id": "2",
+					"text": "World",
+					"user_id": "testuser",
+					"created_at": "2024-01-02T00:00:00Z",
+					"reactions": [],
+					"reaction_count": 0
+				  }
 				]
-			}`,
+          }`,
 		},
 	}
 
@@ -333,6 +386,7 @@ func TestAPI_createMessage(t *testing.T) {
 				DB:     tt.db,
 				Cache:  tt.cache,
 				Logger: slog.New(slog.NewTextHandler(buf, nil)),
+				Val:    validator.New(),
 			}
 
 			srv := httptest.NewServer(api)
@@ -362,10 +416,10 @@ func TestAPI_createReaction(t *testing.T) {
 		{
 			name: "OK",
 			req: `{
-				"type": "thumbs_up",
+				"type": "thumbsup",
 				"user_id": "test"
 			}`,
-			messageID: "12345",
+			messageID: "84bd9af7-79e6-4027-b284-9d5d875efd5b",
 			db: &testdb{
 				insertReaction: func(t *testing.T, reaction Reaction) (Reaction, error) {
 					if reaction.UserID != "test" {
@@ -376,7 +430,7 @@ func TestAPI_createReaction(t *testing.T) {
 					}
 					return Reaction{
 						ID:        "1",
-						MessageID: "12345",
+						MessageID: "84bd9af7-79e6-4027-b284-9d5d875efd5b",
 						Score:     1,
 						Type:      reaction.Type,
 						UserID:    reaction.UserID,
@@ -387,10 +441,11 @@ func TestAPI_createReaction(t *testing.T) {
 			wantStatus: 201,
 			wantBody: `{
 				"id": "1",
-				"message_id": "12345",
-				"type": "thumbs_up",
+				"message_id": "84bd9af7-79e6-4027-b284-9d5d875efd5b",
+				"type": "thumbsup",
+				"score": 1,	
 				"user_id": "test",
-				"created_at": "Mon, 01 Jan 2024 00:00:00 UTC"
+				"created_at": "2024-01-01T00:00:00Z"
 			}`,
 		},
 	}
@@ -404,6 +459,8 @@ func TestAPI_createReaction(t *testing.T) {
 			api := &API{
 				DB:     tt.db,
 				Logger: slogt.New(t),
+				Val:    validator.New(),
+				Cache:  &testcache{},
 			}
 
 			srv := httptest.NewServer(api)
@@ -422,13 +479,13 @@ func TestAPI_createReaction(t *testing.T) {
 
 type testdb struct {
 	T              *testing.T
-	listMessages   func(t *testing.T, excludeMsgIDs ...string) ([]Message, error)
+	listMessages   func(t *testing.T, limit int, offset int, excludeMsgIDs ...string) ([]Message, error)
 	insertMessage  func(t *testing.T, msg Message) (Message, error)
 	insertReaction func(t *testing.T, reaction Reaction) (Reaction, error)
 }
 
-func (db *testdb) ListMessages(_ context.Context, excludeMsgIDs ...string) ([]Message, error) {
-	return db.listMessages(db.T, excludeMsgIDs...)
+func (db *testdb) ListMessages(_ context.Context, limit int, offset int, excludeMsgIDs ...string) ([]Message, error) {
+	return db.listMessages(db.T, limit, offset, excludeMsgIDs...)
 }
 
 func (db *testdb) InsertMessage(_ context.Context, msg Message) (Message, error) {
@@ -440,9 +497,11 @@ func (db *testdb) InsertReaction(_ context.Context, reaction Reaction) (Reaction
 }
 
 type testcache struct {
-	T             *testing.T
-	listMessages  func(t *testing.T) ([]Message, error)
-	insertMessage func(t *testing.T, msg Message) error
+	T              *testing.T
+	listMessages   func(t *testing.T) ([]Message, error)
+	insertMessage  func(t *testing.T, msg Message) error
+	insertReaction func(t *testing.T, reaction Reaction) error
+	listReactions  func(t *testing.T, messageID string) ([]Reaction, error)
 }
 
 func (c *testcache) ListMessages(_ context.Context) ([]Message, error) {
@@ -451,6 +510,17 @@ func (c *testcache) ListMessages(_ context.Context) ([]Message, error) {
 
 func (c *testcache) InsertMessage(_ context.Context, msg Message) error {
 	return c.insertMessage(c.T, msg)
+}
+
+func (c *testcache) InsertReaction(_ context.Context, messageID string, reaction Reaction) error {
+	if c.insertReaction == nil {
+		return nil
+	}
+	return c.insertReaction(c.T, reaction)
+}
+
+func (c *testcache) ListReactions(_ context.Context, messageID string) ([]Reaction, error) {
+	return c.listReactions(c.T, messageID)
 }
 
 func checkStatus(t *testing.T, got, want int) {

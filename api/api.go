@@ -23,6 +23,12 @@ type DB interface {
 type Cache interface {
 	ListMessages(ctx context.Context) ([]Message, error)
 	InsertMessage(ctx context.Context, msg Message) error
+	InsertReaction(ctx context.Context, msgId string, reaction Reaction) error
+}
+
+type ErrorResponse struct {
+	Kind   string                      `json:"kind"`
+	Errors []validator.ValidationError `json:"errors"`
 }
 
 // API provides the REST endpoints for the application.
@@ -73,13 +79,22 @@ func (a *API) respondError(w http.ResponseWriter, status int, err error, msg str
 
 func (a *API) validateBody(w http.ResponseWriter, s interface{}) bool {
 	errs := a.Val.ValidateStruct(s)
-	type response struct {
-		Errors []validator.ValidationError `json:"errors"`
-	}
-
-	if len(errs) > 0 {
-		a.respond(w, http.StatusBadRequest, &response{
+	if errs != nil {
+		a.respond(w, http.StatusBadRequest, &ErrorResponse{
 			Errors: errs,
+			Kind:   "body",
+		})
+		return false
+	}
+	return true
+}
+
+func (a *API) validateParam(w http.ResponseWriter, s interface{}, tag string) bool {
+	errs := a.Val.Validate(s, tag)
+	if errs != nil {
+		a.respond(w, http.StatusBadRequest, &ErrorResponse{
+			Errors: errs,
+			Kind:   "param",
 		})
 		return false
 	}
@@ -91,12 +106,12 @@ func (a *API) listMessages(w http.ResponseWriter, r *http.Request) {
 		Messages []Message `json:"messages"`
 	}
 
-	pageStr := r.URL.Query().Get("page")
-	if pageStr == "" {
-		pageStr = "1"
+	p := r.URL.Query().Get("page")
+	if p == "" {
+		p = "1"
 	}
+	page, err := strconv.Atoi(p)
 
-	page, err := strconv.Atoi(pageStr)
 	if err != nil {
 		a.respondError(w, http.StatusBadRequest, err, "Invalid page number")
 		return
@@ -124,6 +139,11 @@ func (a *API) listMessages(w http.ResponseWriter, r *http.Request) {
 
 	a.Logger.Info("Got remaining messages from DB", "count", len(dbMsgs))
 	msgs = append(msgs, dbMsgs...)
+
+	if msgs == nil {
+		msgs = []Message{}
+	}
+
 	res := response{
 		Messages: msgs,
 	}
@@ -187,15 +207,17 @@ func (a *API) createMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) createReaction(w http.ResponseWriter, r *http.Request) {
-	type (
-		request struct {
-			Type   string `json:"type"`
-			Score  int    `json:"score"`
-			UserID string `json:"user_id"`
-		}
-	)
+	type request struct {
+		Type   string `json:"type" validate:"required"`
+		Score  int    `json:"score"`
+		UserID string `json:"user_id" validate:"required"`
+	}
 
 	messageID := r.PathValue("messageID")
+	if !a.validateParam(w, messageID, "required,uuid") {
+		return
+	}
+
 	var body request
 	err := json.NewDecoder(r.Body).Decode(&body)
 	if err != nil {
@@ -209,7 +231,7 @@ func (a *API) createReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if valid := a.validateBody(w, &body); !valid {
+	if !a.validateBody(w, &body) {
 		return
 	}
 
@@ -223,6 +245,13 @@ func (a *API) createReaction(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		a.respondError(w, http.StatusInternalServerError, err, fmt.Sprintf("could not create reaction for message with id %s", messageID))
+		return
+	}
+
+	err = a.Cache.InsertReaction(r.Context(), messageID, reaction)
+	if err != nil {
+		a.Logger.Error("Could not cache reaction", "error", err.Error())
+		a.respondError(w, http.StatusInternalServerError, err, "Internal server error")
 		return
 	}
 

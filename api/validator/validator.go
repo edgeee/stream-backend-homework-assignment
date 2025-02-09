@@ -1,8 +1,6 @@
 package validator
 
 import (
-	"fmt"
-
 	"github.com/go-playground/validator/v10"
 )
 
@@ -17,32 +15,38 @@ type ValidationError struct {
 	Message interface{}
 }
 
-// ValidateStruct validates the provided struct using the underlying validator and returns a slice of validation errors.
-func (v *Validator) ValidateStruct(s interface{}) []ValidationError {
+func (v *Validator) formatError(err error) []ValidationError {
 	errors := make([]ValidationError, 0)
-
-	err := v.cli.Struct(s)
-	if err != nil {
-		for _, err := range err.(validator.ValidationErrors) {
-			var msg string
-			switch err.Tag() {
-			case "required":
-				msg = fmt.Sprintf("%s is required", err.Namespace())
-			default:
-				msg = err.Error()
-			}
-
-			errors = append(errors, ValidationError{
-				Field:   err.StructField(),
-				Message: msg,
-			})
-		}
+	for _, err := range err.(validator.ValidationErrors) {
+		msg := err.Error()
+		errors = append(errors, ValidationError{
+			Field:   err.StructField(),
+			Message: msg,
+		})
 	}
 
 	return errors
 }
 
-// New creates a new validator
+// ValidateStruct validates the provided struct using the underlying validator and returns a slice of validation errors.
+func (v *Validator) ValidateStruct(s interface{}) []ValidationError {
+	err := v.cli.Struct(s)
+	if err != nil {
+		return v.formatError(err)
+	}
+	return nil
+}
+
+// Validate checks the provided value against the specified validation tags and returns a slice of validation errors.
+func (v *Validator) Validate(value interface{}, tag string) []ValidationError {
+	err := v.cli.Var(value, tag)
+	if err != nil {
+		return v.formatError(err)
+	}
+	return nil
+}
+
+// New initializes and returns a new instance of the Validator
 func New() *Validator {
 	return &Validator{
 		cli: validator.New(validator.WithRequiredStructEnabled()),

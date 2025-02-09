@@ -52,6 +52,12 @@ func (r *Redis) ListMessages(ctx context.Context) ([]api.Message, error) {
 			return nil, fmt.Errorf("hgetall: %w", err)
 		}
 
+		reactions, err := r.ListReactions(ctx, msg.ID)
+		if err != nil {
+			return nil, fmt.Errorf("list reactions: %w", err)
+		}
+
+		msg.Reactions = reactions
 		out[i] = msg.APIMessage()
 	}
 
@@ -93,6 +99,71 @@ func (r *Redis) InsertMessage(ctx context.Context, msg api.Message) error {
 	return nil
 }
 
+// ListReactions fetches all reactions associated with a given message ID.
+func (r *Redis) ListReactions(ctx context.Context, msgId string) ([]reaction, error) {
+	key := fmt.Sprintf("%s:%s:reactions", messagePrefix, msgId)
+	vals, err := r.cli.ZRangeByScore(ctx, key, &redis.ZRangeBy{
+		Min: "-inf",
+		Max: fmt.Sprintf("%d", time.Now().UnixNano()),
+	}).Result()
+
+	if err != nil {
+		return nil, fmt.Errorf("zrange: %w", err)
+	}
+
+	if len(vals) == 0 {
+		return []reaction{}, nil
+	}
+
+	out := make([]reaction, len(vals))
+	_, err = r.cli.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for i, key := range vals {
+			var rc reaction
+			err := pipe.HGetAll(ctx, key).Scan(&rc)
+			if err != nil {
+				return fmt.Errorf("hgetall: %w", err)
+			}
+			out[i] = rc
+		}
+		return nil
+	})
+
+	return out, nil
+}
+
+// InsertReaction adds a reaction to the specified message in Redis identified by msgId.
+func (r *Redis) InsertReaction(ctx context.Context, msgId string, mr api.Reaction) error {
+	reaction_ := &reaction{
+		ID:        mr.ID,
+		MessageID: mr.MessageID,
+		UserID:    mr.UserID,
+		Type:      mr.Type,
+		Score:     mr.Score,
+	}
+
+	err := r.cli.Watch(ctx, func(tx *redis.Tx) error {
+		_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			keyPrefix := fmt.Sprintf("%s:%s:reactions", messagePrefix, msgId)
+			key := fmt.Sprintf("%s:%s", keyPrefix, mr.ID)
+			pipe.HSet(ctx, key, reaction_)
+
+			pipe.ZAdd(ctx, keyPrefix, redis.Z{
+				Score:  float64(mr.CreatedAt.UnixNano()),
+				Member: key,
+			})
+			return nil
+		})
+
+		return err
+	}, mr.ID)
+
+	if err != nil {
+		return fmt.Errorf("could not insert reaction: %w", err)
+	}
+
+	return nil
+}
+
 func (r *Redis) evictOldest(ctx context.Context) error {
 	vals, err := r.cli.ZRange(ctx, messagePrefix, 0, int64(-maxSize-1)).Result()
 	if err != nil {
@@ -102,6 +173,7 @@ func (r *Redis) evictOldest(ctx context.Context) error {
 	for _, key := range vals {
 		_ = r.cli.ZRem(ctx, messagePrefix, key).Err()
 		_ = r.cli.Del(ctx, key).Err()
+		_ = r.cli.Del(ctx, fmt.Sprintf("%s:reactions", key)).Err()
 	}
 
 	return nil
