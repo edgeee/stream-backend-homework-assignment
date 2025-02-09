@@ -41,6 +41,7 @@ func TestPostgres_ListMessages(t *testing.T) {
 					Text:      "hello",
 					UserID:    "test",
 					CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+					Reactions: []api.Reaction{},
 				},
 			},
 		},
@@ -70,12 +71,14 @@ func TestPostgres_ListMessages(t *testing.T) {
 					Text:      "world",
 					UserID:    "test",
 					CreatedAt: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+					Reactions: []api.Reaction{},
 				},
 				{
 					ID:        "4562fe69-42b3-46e5-b990-11581182f57c",
 					Text:      "hello",
 					UserID:    "test",
 					CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+					Reactions: []api.Reaction{},
 				},
 			},
 		},
@@ -93,7 +96,7 @@ func TestPostgres_ListMessages(t *testing.T) {
 				}
 			}
 
-			got, err := pg.ListMessages(ctx)
+			got, err := pg.ListMessages(ctx, 10, 0)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -164,8 +167,12 @@ func connect(t *testing.T) *Postgres {
 		t.Fatalf("Could not connect to PostgreSQL: %v", err)
 	}
 
-	// Truncate the table before each test.
-	if _, err := pg.bun.NewTruncateTable().Model((*message)(nil)).Exec(ctx); err != nil {
+	// Truncate the tables before each test.
+	if _, err := pg.bun.NewTruncateTable().Cascade().Model((*reaction)(nil)).Exec(ctx); err != nil {
+		t.Fatalf("Could not truncate table: %v", err)
+	}
+
+	if _, err := pg.bun.NewTruncateTable().Cascade().Model((*message)(nil)).Exec(ctx); err != nil {
 		t.Fatalf("Could not truncate table: %v", err)
 	}
 
