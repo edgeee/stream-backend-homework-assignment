@@ -110,23 +110,16 @@ func (r *Redis) ListReactions(ctx context.Context, msgId string) ([]reaction, er
 	if err != nil {
 		return nil, fmt.Errorf("zrange: %w", err)
 	}
-
-	if len(vals) == 0 {
-		return []reaction{}, nil
-	}
-
 	out := make([]reaction, len(vals))
-	_, err = r.cli.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-		for i, key := range vals {
-			var rc reaction
-			err := pipe.HGetAll(ctx, key).Scan(&rc)
-			if err != nil {
-				return fmt.Errorf("hgetall: %w", err)
-			}
-			out[i] = rc
+	for i, key := range vals {
+		var rc reaction
+		err := r.cli.HGetAll(ctx, key).Scan(&rc)
+		if err != nil {
+			return nil, fmt.Errorf("hgetall: %w", err)
 		}
-		return nil
-	})
+
+		out[i] = rc
+	}
 
 	return out, nil
 }

@@ -30,7 +30,7 @@ func Connect(ctx context.Context, connStr string) (*Postgres, error) {
 }
 
 // ListMessages returns all messages in the database.
-func (pg *Postgres) ListMessages(ctx context.Context, limit int, offset int, excludeMsgIDs ...string) ([]api.Message, error) {
+func (pg *Postgres) ListMessages(ctx context.Context, limit, offset int, excludeMsgIDs ...string) ([]api.Message, error) {
 	var msgs []message
 	q := pg.bun.NewSelect().
 		Model(&msgs).

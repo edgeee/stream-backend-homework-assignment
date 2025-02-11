@@ -11,6 +11,7 @@ type TestStruct struct {
 	Optional string
 }
 
+// TestValidator_ValidateStruct tests the Validator's ValidateStruct method for various struct validation scenarios.
 func TestValidator_ValidateStruct(t *testing.T) {
 	v := New()
 
@@ -95,6 +96,7 @@ func TestValidator_ValidateStruct(t *testing.T) {
 	}
 }
 
+// TestValidator_Validate tests the Validate method of the Validator to ensure correct validation behavior for given scenarios.
 func TestValidator_Validate(t *testing.T) {
 	v := New()
 

@@ -38,7 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	redis, err := redis.Connect(ctx, *redisAddr)
+	r, err := redis.Connect(ctx, *redisAddr)
 	if err != nil {
 		logger.Error("Could not connect to Redis", "error", err.Error())
 		os.Exit(1)
@@ -53,7 +53,7 @@ func main() {
 	api := &api.API{
 		Logger: logger,
 		DB:     pg,
-		Cache:  redis,
+		Cache:  r,
 		Val:    validator.New(),
 	}
 

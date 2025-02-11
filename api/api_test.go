@@ -118,7 +118,6 @@ func TestAPI_listMessages(t *testing.T) {
 						"reactions": [
 							{
 								"id": "1",
-								"message_id": "1",
 								"type": "thumbs_up",
 								"score": 1,
                                 "user_id": "testuser2",
@@ -172,7 +171,6 @@ func TestAPI_listMessages(t *testing.T) {
 						"reactions": [
 							{
 								"id": "1",
-								"message_id": "1",
 								"type": "thumbs_up",
 								"score": 1,
                                 "user_id": "testuser2",
@@ -441,7 +439,6 @@ func TestAPI_createReaction(t *testing.T) {
 			wantStatus: 201,
 			wantBody: `{
 				"id": "1",
-				"message_id": "84bd9af7-79e6-4027-b284-9d5d875efd5b",
 				"type": "thumbsup",
 				"score": 1,	
 				"user_id": "test",

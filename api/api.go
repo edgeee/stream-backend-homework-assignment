@@ -14,7 +14,7 @@ import (
 
 // A DB provides a storage layer that persists messages.
 type DB interface {
-	ListMessages(ctx context.Context, limit int, offset int, excludeMsgIDs ...string) ([]Message, error)
+	ListMessages(ctx context.Context, limit, offset int, excludeMsgIDs ...string) ([]Message, error)
 	InsertMessage(ctx context.Context, msg Message) (Message, error)
 	InsertReaction(ctx context.Context, reaction Reaction) (Reaction, error)
 }
@@ -26,7 +26,7 @@ type Cache interface {
 	InsertReaction(ctx context.Context, msgId string, reaction Reaction) error
 }
 
-type ErrorResponse struct {
+type ValidationErrorResponse struct {
 	Kind   string                      `json:"kind"`
 	Errors []validator.ValidationError `json:"errors"`
 }
@@ -47,7 +47,6 @@ var pageSize = 10
 
 func (a *API) setupRoutes() {
 	mux := http.NewServeMux()
-
 	mux.HandleFunc("GET /messages", a.listMessages)
 	mux.HandleFunc("POST /messages", a.createMessage)
 	mux.HandleFunc("POST /messages/{messageID}/reactions", a.createReaction)
@@ -77,10 +76,10 @@ func (a *API) respondError(w http.ResponseWriter, status int, err error, msg str
 	a.respond(w, status, response{Error: msg})
 }
 
-func (a *API) validateBody(w http.ResponseWriter, s interface{}) bool {
+func (a *API) validateReqBody(w http.ResponseWriter, s interface{}) bool {
 	errs := a.Val.ValidateStruct(s)
 	if errs != nil {
-		a.respond(w, http.StatusBadRequest, &ErrorResponse{
+		a.respond(w, http.StatusBadRequest, &ValidationErrorResponse{
 			Errors: errs,
 			Kind:   "body",
 		})
@@ -92,7 +91,7 @@ func (a *API) validateBody(w http.ResponseWriter, s interface{}) bool {
 func (a *API) validateParam(w http.ResponseWriter, s interface{}, tag string) bool {
 	errs := a.Val.Validate(s, tag)
 	if errs != nil {
-		a.respond(w, http.StatusBadRequest, &ErrorResponse{
+		a.respond(w, http.StatusBadRequest, &ValidationErrorResponse{
 			Errors: errs,
 			Kind:   "param",
 		})
@@ -111,19 +110,31 @@ func (a *API) listMessages(w http.ResponseWriter, r *http.Request) {
 		p = "1"
 	}
 	page, err := strconv.Atoi(p)
+	if page < 1 {
+		page = 1
+	}
 
 	if err != nil {
 		a.respondError(w, http.StatusBadRequest, err, "Invalid page number")
 		return
 	}
 
-	// Get messages from cache
-	msgs, err := a.Cache.ListMessages(r.Context())
-	if err != nil {
-		a.respondError(w, http.StatusInternalServerError, err, "Could not list messages")
-		return
+	limit := pageSize
+	offset := limit * (page - 1)
+	msgs := make([]Message, 0)
+
+	// Currently we only store the last page of messages in cache, so we only need to check in cache
+	// only when on the first page.
+	if page == 1 {
+		cached, err := a.Cache.ListMessages(r.Context())
+		if err != nil {
+			a.respondError(w, http.StatusInternalServerError, err, "Could not list messages")
+			return
+		}
+
+		msgs = append(msgs, cached...)
+		a.Logger.Info("Got messages from cache", "count", len(msgs))
 	}
-	a.Logger.Info("Got messages from cache", "count", len(msgs))
 
 	// Get any remaining messages from DB
 	msgIDs := make([]string, len(msgs))
@@ -131,19 +142,14 @@ func (a *API) listMessages(w http.ResponseWriter, r *http.Request) {
 		msgIDs[i] = msg.ID
 	}
 
-	dbMsgs, err := a.DB.ListMessages(r.Context(), pageSize, pageSize*(page-1), msgIDs...)
+	dbMsgs, err := a.DB.ListMessages(r.Context(), limit, offset, msgIDs...)
 	if err != nil {
 		a.respondError(w, http.StatusInternalServerError, err, "Could not list messages")
 		return
 	}
 
-	a.Logger.Info("Got remaining messages from DB", "count", len(dbMsgs))
 	msgs = append(msgs, dbMsgs...)
-
-	if msgs == nil {
-		msgs = []Message{}
-	}
-
+	a.Logger.Info("Got remaining messages from DB", "count", len(dbMsgs))
 	res := response{
 		Messages: msgs,
 	}
@@ -172,10 +178,9 @@ func (a *API) createMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if valid := a.validateBody(w, &body); !valid {
+	if valid := a.validateReqBody(w, &body); !valid {
 		return
 	}
-
 	err = r.Body.Close()
 	if err != nil {
 		a.respondError(w, http.StatusInternalServerError, err, "Could not close request body")
@@ -206,6 +211,7 @@ func (a *API) createMessage(w http.ResponseWriter, r *http.Request) {
 	a.respond(w, http.StatusCreated, res)
 }
 
+// createReaction handles the creation of a reaction for a given message.
 func (a *API) createReaction(w http.ResponseWriter, r *http.Request) {
 	type request struct {
 		Type   string `json:"type" validate:"required"`
@@ -231,7 +237,7 @@ func (a *API) createReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !a.validateBody(w, &body) {
+	if !a.validateReqBody(w, &body) {
 		return
 	}
 

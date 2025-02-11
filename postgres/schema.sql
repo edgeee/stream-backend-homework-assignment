@@ -17,3 +17,7 @@ CREATE TABLE IF NOT EXISTS reactions (
   score INTEGER DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- indexes
+CREATE INDEX IF NOT EXISTS idx_message_id
+ON reactions(message_id);

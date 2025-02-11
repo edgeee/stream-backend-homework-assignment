@@ -20,7 +20,7 @@ type reaction struct {
 	MessageID string    `bun:",notnull"`
 	UserID    string    `bun:",notnull"`
 	Type      string    `bun:",notnull"`
-	Score     int       `bun:",notnull"`
+	Score     int       `bun:",notnull,default:1"`
 	CreatedAt time.Time `bun:",nullzero,default:now()"`
 	Message   message   `bun:"rel:belongs-to,join:id=id"`
 }

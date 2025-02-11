@@ -15,7 +15,7 @@ type Message struct {
 // A Reaction represents a reaction to a message such as a like.
 type Reaction struct {
 	ID        string    `json:"id"`
-	MessageID string    `json:"message_id"`
+	MessageID string    `json:"-"`
 	Type      string    `json:"type"`
 	Score     int       `json:"score"`
 	UserID    string    `json:"user_id"`

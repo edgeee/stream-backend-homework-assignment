@@ -17,17 +17,18 @@ type message struct {
 
 // reaction represents a reaction to a message, stored in the database.
 type reaction struct {
-	ID        string `redis:"id"`
-	MessageID string `redis:"message_id"`
-	UserID    string `redis:"user_id"`
-	Type      string `redis:"type"`
-	Score     int    `redis:"score"`
+	ID        string    `redis:"id"`
+	MessageID string    `redis:"message_id"`
+	UserID    string    `redis:"user_id"`
+	Type      string    `redis:"type"`
+	Score     int       `redis:"score"`
+	CreatedAt time.Time `redis:"created_at"`
 }
 
 func (m message) APIMessage() api.Message {
-	reactions := make([]api.Reaction, len(m.Reactions))
+	rcs := make([]api.Reaction, len(m.Reactions))
 	for i, r := range m.Reactions {
-		reactions[i] = r.APIReaction()
+		rcs[i] = r.APIReaction()
 	}
 
 	apiMsg := api.Message{
@@ -35,10 +36,9 @@ func (m message) APIMessage() api.Message {
 		Text:          m.Text,
 		UserID:        m.UserID,
 		CreatedAt:     m.CreatedAt,
-		Reactions:     reactions,
+		Reactions:     rcs,
 		ReactionCount: len(m.Reactions),
 	}
-
 	return apiMsg
 }
 
